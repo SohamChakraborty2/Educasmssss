@@ -4,7 +4,7 @@ export interface UserContext {
 
 export interface MarkdownComponentProps {
   children: React.ReactNode;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Question {
@@ -41,6 +41,6 @@ export interface PreFillFormProps {
 
 declare global {
   interface Window {
-    dataLayer: any[];
+    dataLayer: Array<Record<string, unknown>>;
   }
 } 

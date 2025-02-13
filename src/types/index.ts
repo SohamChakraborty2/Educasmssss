@@ -1,4 +1,3 @@
-
 export interface UserContext {
   age: number;
   location?: string;
@@ -65,9 +64,9 @@ export interface QuestionHistory {
 }
 
 export interface MarkdownComponentProps {
-  node?: any;
+  node?: unknown;
   children?: React.ReactNode;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
-// Add other shared types here 
+// Add other shared types here

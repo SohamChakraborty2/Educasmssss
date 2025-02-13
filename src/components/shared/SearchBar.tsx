@@ -1,6 +1,12 @@
 // src/components/shared/SearchBar.tsx
-import React, { useState, KeyboardEvent, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion"; // You'll need to install framer-motion
+
+//any->suggestions data type created
+interface Suggestion {
+  text: string;
+  icon: string;
+}
 
 interface SearchBarProps {
   placeholder?: string;
@@ -9,7 +15,7 @@ interface SearchBarProps {
   title?: string;
   initialValue?: string;
   className?: string;
-  suggestions?: Array<{ text: string; icon: string }>;
+  suggestions?: Suggestion[];
   onSubmit?: (query: string) => void;
   buttonText?: string;
 }
@@ -53,7 +59,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     }
   };
 
-  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleSearch(query);
@@ -68,21 +74,19 @@ export const SearchBar: React.FC<SearchBarProps> = ({
 
   // Add keyboard shortcut (Cmd/Ctrl + K)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         document.querySelector<HTMLInputElement>('input[type="text"]')?.focus();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown as any);
-    return () => window.removeEventListener("keydown", handleKeyDown as any);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   return (
-    <div
-      className={`w-full max-w-3xl ${centered ? "mx-auto text-center" : ""}`}
-    >
+    <div className={`w-full max-w-3xl ${centered ? "mx-auto text-center" : ""}`}>
       {centered && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -113,16 +117,12 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             }}
             placeholder={placeholder}
             className={`w-full pl-4 pr-24 py-4 bg-gray-800/80 border border-gray-700/50 
-              rounded-2xl shadow-lg
-              text-gray-200 placeholder-gray-400 text-lg
+              rounded-2xl shadow-lg text-gray-200 placeholder-gray-400 text-lg
               focus:outline-none focus:ring-2 focus:ring-primary/20
               transition-all duration-300 ease-in-out
               hover:bg-gray-800/90 hover:border-gray-600/50
-              ${
-                isFocused ? "border-primary/50 shadow-lg shadow-primary/10" : ""
-              }
-              transform ${isFocused ? "scale-[1.02]" : "scale-100"}
-              ${className}`}
+              ${isFocused ? "border-primary/50 shadow-lg shadow-primary/10" : ""}
+              transform ${isFocused ? "scale-[1.02]" : "scale-100"} ${className}`}
           />
         </motion.div>
 
@@ -198,7 +198,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
               )}
               <div className="px-4">
                 <div className="text-xs text-gray-500 mb-2">Suggestions</div>
-                {suggestions.map((suggestion, idx) => (
+                {suggestions.map((suggestion: Suggestion, idx: number) => (
                   <button
                     key={idx}
                     onClick={() => handleSuggestionClick(suggestion.text)}
@@ -221,10 +221,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           transition={{ delay: 0.3 }}
           className="mt-6 space-y-2"
         >
-         <p className="text-gray-400 text-sm"></p>
+          <p className="text-gray-400 text-sm"></p>
           <div className="flex items-center justify-center space-x-4 text-sm text-gray-500">
-           <span></span>  
-            {suggestions.map(({ text, icon }, idx) => (
+            <span></span>
+            {suggestions.map(({ text, icon }: Suggestion, idx: number) => (
               <motion.button
                 key={idx}
                 whileHover={{ scale: 1.05 }}

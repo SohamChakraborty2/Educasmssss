@@ -1,17 +1,30 @@
 import { Question, UserContext, ExploreResponse } from '../types';
 import OpenAI from 'openai';
-  
-  export class GPTService {
+
+// Define interfaces for related content in streamExploreContent
+interface RelatedTopic {
+  topic: string;
+  type: string;
+  reason: string;
+}
+
+interface RelatedQuestion {
+  question: string;
+  type: string;
+  context: string;
+}
+
+export class GPTService {
   private openai: OpenAI;
   
-    constructor() {
+  constructor() {
     this.openai = new OpenAI({
-      apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+      apiKey: import.meta.env.OPENAI_API_KEY,
       dangerouslyAllowBrowser: true
     });
   }
 
-  private async makeRequest(systemPrompt: string, userPrompt: string, maxTokens: number = 2000) {
+  private async makeRequest(systemPrompt: string, userPrompt: string, maxTokens: number = 2000): Promise<string> {
     try {
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
@@ -24,14 +37,14 @@ import OpenAI from 'openai';
             role: 'user', 
             content: userPrompt 
           }
-            ],
-            temperature: 0.7,
+        ],
+        temperature: 0.7,
         max_tokens: maxTokens,
-            response_format: { type: "json_object" }
+        response_format: { type: "json_object" }
       });
 
       return response.choices[0].message?.content || '';
-      } catch (error) {
+    } catch (error) {
       console.error('OpenAI API Error:', error);
       throw new Error('Failed to generate content');
     }
@@ -148,14 +161,14 @@ import OpenAI from 'openai';
         3. Real-world application examples without using the word real world application
         Make it engaging for someone aged ${userContext.age}.`;
 
-        const content = await this.makeRequest(systemPrompt, userPrompt);
+      const content = await this.makeRequest(systemPrompt, userPrompt);
       console.log('Raw GPT response:', content);
       
       if (!content) {
         throw new Error('Empty response from GPT');
       }
 
-        const parsedContent = JSON.parse(content);
+      const parsedContent = JSON.parse(content);
       console.log('Parsed content:', parsedContent);
 
       // Validate the response structure
@@ -368,9 +381,9 @@ import OpenAI from 'openai';
       options: optionsWithIndex.map(opt => opt.text),
       correctAnswer: newCorrectAnswer
     };
-    }
+  }
   
-    async getTestQuestions(topic: string, examType: 'JEE' | 'NEET'): Promise<Question[]> {
+  async getTestQuestions(topic: string, examType: 'JEE' | 'NEET'): Promise<Question[]> {
     try {
       const systemPrompt = `Create a ${examType} exam test set about ${topic}.
         Generate exactly 15 questions following this structure:
@@ -389,8 +402,6 @@ import OpenAI from 'openai';
             }
           ]
         }`;
-        // ..
-        
 
       console.log('Generating test questions...');
       
@@ -538,13 +549,13 @@ import OpenAI from 'openai';
              }
            }
          }
-
+      
       6. Related Content Style:
          - "Trending topics to explore..."
          - "This gives... vibes"
          - "Main character moments in..."
          - "POV: when you learn about..."
-
+      
       Important:
       - Use CURRENT trends (2024)
       - Reference viral moments
@@ -557,7 +568,7 @@ import OpenAI from 'openai';
   async streamExploreContent(
     query: string, 
     userContext: UserContext,
-    onChunk: (content: { text?: string, topics?: any[], questions?: any[] }) => void
+    onChunk: (content: { text?: string; topics?: RelatedTopic[]; questions?: RelatedQuestion[] }) => void
   ): Promise<void> {
     const maxRetries = 3;
     let retryCount = 0;
@@ -629,20 +640,21 @@ import OpenAI from 'openai';
 
         let mainContent = '';
         let jsonContent = '';
-        let currentTopics: any[] = [];
-        let currentQuestions: any[] = [];
+        // Use const since these arrays are not reassigned
+        const currentTopics: RelatedTopic[] = [];
+        const currentQuestions: RelatedQuestion[] = [];
         let isJsonSection = false;
         
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
+          const contentChunk = chunk.choices[0]?.delta?.content || '';
           
-          if (content.includes('---')) {
+          if (contentChunk.includes('---')) {
             isJsonSection = true;
             continue;
           }
 
           if (isJsonSection) {
-            jsonContent += content;
+            jsonContent += contentChunk;
             try {
               // Try to parse complete JSON objects
               if (jsonContent.includes('}')) {
@@ -652,12 +664,13 @@ import OpenAI from 'openai';
                   
                   // Process topics if available
                   if (parsed.topics && Array.isArray(parsed.topics)) {
-                    parsed.topics.forEach((topic: any) => {
-                      if (!currentTopics.some(t => t.topic === topic.name)) {
+                    parsed.topics.forEach((topic: unknown) => {
+                      const topicObj = topic as { name: string; type: string; detail: string };
+                      if (!currentTopics.some((t) => t.topic === topicObj.name)) {
                         currentTopics.push({
-                          topic: topic.name,
-                          type: topic.type,
-                          reason: topic.detail
+                          topic: topicObj.name,
+                          type: topicObj.type,
+                          reason: topicObj.detail
                         });
                       }
                     });
@@ -665,12 +678,13 @@ import OpenAI from 'openai';
 
                   // Process questions if available
                   if (parsed.questions && Array.isArray(parsed.questions)) {
-                    parsed.questions.forEach((question: any) => {
-                      if (!currentQuestions.some(q => q.question === question.text)) {
+                    parsed.questions.forEach((question: unknown) => {
+                      const questionObj = question as { text: string; type: string; detail: string };
+                      if (!currentQuestions.some((q) => q.question === questionObj.text)) {
                         currentQuestions.push({
-                          question: question.text,
-                          type: question.type,
-                          context: question.detail
+                          question: questionObj.text,
+                          type: questionObj.type,
+                          context: questionObj.detail
                         });
                       }
                     });
@@ -689,7 +703,7 @@ import OpenAI from 'openai';
               console.debug('JSON parse error:', error);
             }
           } else {
-            mainContent += content;
+            mainContent += contentChunk;
             onChunk({ 
               text: mainContent.trim(),
               topics: currentTopics.length > 0 ? currentTopics : undefined,
@@ -713,7 +727,7 @@ import OpenAI from 'openai';
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       }
     }
-    }
   }
-  
-  export const gptService = new GPTService();
+}
+
+export const gptService = new GPTService();

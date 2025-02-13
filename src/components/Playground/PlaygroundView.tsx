@@ -1,9 +1,19 @@
 // src/components/Playground/PlaygroundView.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { SearchBar } from "../shared/SearchBar";
 import { Loading } from "../shared/Loading";
 import { useApi } from "../../hooks/useApi";
-import { Trophy, Timer, Target, Award, Pause, Play, CheckCircle, XCircle, Lightbulb } from "lucide-react";
+import {
+  Trophy,
+  Timer,
+  Target,
+  Award,
+  Pause,
+  Play,
+  CheckCircle,
+  XCircle,
+  Lightbulb,
+} from "lucide-react";
 import { Question, UserContext } from "../../types";
 
 interface PlaygroundViewProps {
@@ -21,19 +31,13 @@ interface Stats {
   avgTime: number;
 }
 
-interface TopicProgress {
-  totalAttempts: number;
-  successRate: number;
-  averageTime: number;
-  lastLevel: number;
-  masteryScore: number;
-}
+const COUNTDOWN_DURATION = 5;
 
 export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   initialQuery,
   onError,
   onSuccess,
-  userContext
+  userContext,
 }) => {
   const { getQuestion } = useApi();
   const [isInitialLoading, setIsInitialLoading] = useState(false);
@@ -42,16 +46,10 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [nextQuestionTimer, setNextQuestionTimer] = useState<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const [nextQuestionTimer, setNextQuestionTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [currentQuestionTime, setCurrentQuestionTime] = useState<number>(0);
-  const [timerInterval, setTimerInterval] = useState<ReturnType<
-    typeof setInterval
-  > | null>(null);
-  const [nextQuestionCountdown, setNextQuestionCountdown] = useState<
-    number | null
-  >(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
 
   const [sessionStats, setSessionStats] = useState({
     totalQuestions: 0,
@@ -67,168 +65,168 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
     avgTime: 0,
   });
 
-  const [_topicProgress, _setTopicProgress] = useState<TopicProgress>(() => {
-    const saved = localStorage.getItem(`topic-progress-${query}`);
-    return saved
-      ? JSON.parse(saved)
-      : {
-          totalAttempts: 0,
-          successRate: 0,
-          averageTime: 0,
-          lastLevel: 1,
-          masteryScore: 0,
-        };
-  });
-
   const [nextQuestion, setNextQuestion] = useState<Question | null>(null);
   const [preloadedQuestion, setPreloadedQuestion] = useState<Question | null>(null);
 
-  // Add state for tracking when to show next question
   const [shouldShowNext, setShouldShowNext] = useState(false);
 
-  const startQuestionTimer = (): void => {
-    // Clear any existing timer first
-    if (timerInterval) {
-      clearInterval(timerInterval);
+  // Timer management using useRef
+  const startQuestionTimer = useCallback((): void => {
+    // Clear any existing timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
     }
-    
-    const interval = setInterval(() => {
-      setCurrentQuestionTime((prev) => prev + 1);
+    timerIntervalRef.current = setInterval(() => {
+      setCurrentQuestionTime(prev => prev + 1);
     }, 1000);
-    setTimerInterval(interval);
-  };
+  }, []);
 
-  const stopQuestionTimer = (): void => {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      setTimerInterval(null);
+  const stopQuestionTimer = useCallback((): void => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
-  };
+  }, []);
 
-  const prefetchNextQuestion = async () => {
+  const fetchNewQuestion = useCallback(async () => {
+    if (!query) return;
+    if (sessionStats.totalQuestions >= sessionStats.sessionLimit) {
+      setSessionStats(prev => ({ ...prev, isSessionComplete: true }));
+      stopQuestionTimer();
+      if (nextQuestionTimer) clearTimeout(nextQuestionTimer);
+      onSuccess("Congratulations! You've completed your practice session! 🎉");
+      return;
+    }
+    try {
+      console.log("Fetching next question...");
+      const question = await getQuestion(query, 1, userContext);
+      console.log("Question loaded:", question);
+      setPreloadedQuestion(question);
+    } catch (error) {
+      console.error("Error fetching question:", error);
+      onError("Failed to generate question. Please try again.");
+    }
+  }, [
+    query,
+    sessionStats.totalQuestions,
+    sessionStats.sessionLimit,
+    nextQuestionTimer,
+    getQuestion,
+    userContext,
+    onSuccess,
+    onError,
+    stopQuestionTimer,
+  ]);
+
+  const handleSearch = useCallback(
+    async (newQuery: string) => {
+      try {
+        setIsInitialLoading(true);
+        setCurrentQuestion(null);
+        setSelectedAnswer(null);
+        setShowExplanation(false);
+        setQuery(newQuery);
+
+        // Load first question immediately
+        const firstQuestion = await getQuestion(newQuery, 1, userContext);
+        setCurrentQuestion(firstQuestion);
+        setSelectedAnswer(null);
+        setCurrentQuestionTime(0);
+        startQuestionTimer();
+
+        // Reset stats if the topic has changed
+        const isSameTopic = newQuery === query;
+        if (!isSameTopic) {
+          setStats({
+            questions: 0,
+            accuracy: 0,
+            streak: 0,
+            bestStreak: 0,
+            avgTime: 0,
+          });
+          setSessionStats({
+            totalQuestions: 0,
+            sessionLimit: 25,
+            isSessionComplete: false,
+          });
+        }
+      } catch (error) {
+        console.error("Search error:", error);
+        onError("Failed to start practice session");
+      } finally {
+        setIsInitialLoading(false);
+      }
+    },
+    [getQuestion, userContext, query, startQuestionTimer, onError]
+  );
+
+  const prefetchNextQuestion = useCallback(async () => {
     try {
       const question = await getQuestion(query, 1, userContext);
       setNextQuestion(question);
     } catch (error) {
       console.error("Error prefetching next question:", error);
     }
-  };
+  }, [getQuestion, query, userContext]);
 
-  const fetchNewQuestion = async () => {
-    if (!query) return;
-
-    if (sessionStats.totalQuestions >= sessionStats.sessionLimit) {
-      setSessionStats((prev) => ({ ...prev, isSessionComplete: true }));
-      stopQuestionTimer();
-      if (nextQuestionTimer) clearTimeout(nextQuestionTimer);
-      onSuccess("Congratulations! You've completed your practice session! 🎉");
-      return;
-    }
-
-    try {
-      console.log('Fetching next question...'); // Debug log
-      const question = await getQuestion(query, 1, userContext);
-      console.log('Question loaded:', question); // Debug log
-      setPreloadedQuestion(question);
-    } catch (error) {
-      console.error("Error fetching question:", error);
-      onError("Failed to generate question. Please try again.");
-    }
-  };
-
-  const handleSearch = async (newQuery: string) => {
-    try {
-      setIsInitialLoading(true);
-      setCurrentQuestion(null);
-      setSelectedAnswer(null);
-      setShowExplanation(false);
-      setQuery(newQuery);
-
-      // Load first question immediately
-      const firstQuestion = await getQuestion(newQuery, 1, userContext);
-      setCurrentQuestion(firstQuestion);
-      setSelectedAnswer(null);
-      setCurrentQuestionTime(0); // Reset timer
-      startQuestionTimer(); // Start timer for first question
-
-      // Reset stats for new topic
-      const isSameTopic = newQuery === query;
-      if (!isSameTopic) {
-        setStats({
-          questions: 0,
-          accuracy: 0,
-          streak: 0,
-          bestStreak: 0,
-          avgTime: 0,
-        });
-        setSessionStats({
-          totalQuestions: 0,
-          sessionLimit: 25,
-          isSessionComplete: false,
-        });
-      }
-    } catch (error) {
-      console.error("Search error:", error);
-      onError("Failed to start practice session");
-    } finally {
-      setIsInitialLoading(false);
-    }
-  };
-
-  const togglePause = () => {
-    setIsPaused(!isPaused);
-    if (nextQuestionTimer) {
-      clearTimeout(nextQuestionTimer);
-      setNextQuestionTimer(null);
-    }
-  };
-
-  const COUNTDOWN_DURATION = 5;
-
-  const updateStats = (isCorrect: boolean): void => {
-    setStats((prev) => {
-      const newQuestions = prev.questions + 1;
-      const newAccuracy = (prev.accuracy * prev.questions + (isCorrect ? 100 : 0)) / newQuestions;
-      const newStreak = isCorrect ? prev.streak + 1 : 0;
-      
-      return {
-        questions: newQuestions,
-        accuracy: newAccuracy,
-        streak: newStreak,
-        bestStreak: Math.max(prev.bestStreak, newStreak),
-        avgTime: (prev.avgTime * prev.questions + currentQuestionTime) / newQuestions,
-      };
-    });
-  };
-
-  const startCountdown = () => {
+  const startCountdown = useCallback(() => {
     setNextQuestionCountdown(COUNTDOWN_DURATION);
     const interval = setInterval(() => {
-      setNextQuestionCountdown((prev) => {
+      setNextQuestionCountdown(prev => {
         if (prev === null) return null;
         const next = prev - 0.1;
         if (next <= 0) {
           clearInterval(interval);
-          setShouldShowNext(true); // Trigger question transition
+          setShouldShowNext(true);
           return null;
         }
         return next;
       });
     }, 100);
-  };
+  }, []);
+
+  const updateStats = useCallback(
+    (isCorrect: boolean): void => {
+      setStats(prev => {
+        const newQuestions = prev.questions + 1;
+        const newAccuracy =
+          (prev.accuracy * prev.questions + (isCorrect ? 100 : 0)) / newQuestions;
+        const newStreak = isCorrect ? prev.streak + 1 : 0;
+        return {
+          questions: newQuestions,
+          accuracy: newAccuracy,
+          streak: newStreak,
+          bestStreak: Math.max(prev.bestStreak, newStreak),
+          avgTime:
+            (prev.avgTime * prev.questions + currentQuestionTime) / newQuestions,
+        };
+      });
+    },
+    [currentQuestionTime]
+  );
+
+  const togglePause = useCallback(() => {
+    if (isPaused) {
+      // Resume: set isPaused to false and restart the timer
+      setIsPaused(false);
+      startQuestionTimer();
+    } else {
+      // Pause: set isPaused to true and stop the timer
+      setIsPaused(true);
+      stopQuestionTimer();
+    }
+  }, [isPaused, startQuestionTimer, stopQuestionTimer]);
 
   const handleAnswer = (index: number) => {
     if (selectedAnswer !== null || !currentQuestion) return;
-    
+
     setSelectedAnswer(index);
     setShowExplanation(true);
     stopQuestionTimer();
     updateStats(index === currentQuestion.correctAnswer);
-    
+
     if (!isPaused) {
-      // Start loading next question immediately
       fetchNewQuestion();
-      // Start countdown for transition
       startCountdown();
     }
   };
@@ -237,56 +235,46 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
     if (query) {
       fetchNewQuestion();
     }
-  }, [query]);
+  }, [query, fetchNewQuestion]);
 
   useEffect(() => {
     if (initialQuery) {
       handleSearch(initialQuery);
     }
-  }, [initialQuery]);
-
-  useEffect(() => {
-    if (_topicProgress) {
-      console.log('Topic progress updated:', _topicProgress);
-    }
-  }, [_topicProgress]);
+  }, [initialQuery, handleSearch]);
 
   useEffect(() => {
     if (nextQuestion) {
       prefetchNextQuestion();
     }
-  }, [nextQuestion]);
+  }, [nextQuestion, prefetchNextQuestion]);
 
-  // Use useEffect to handle question transitions
   useEffect(() => {
     if (shouldShowNext && preloadedQuestion) {
-      console.log('Transitioning to next question:', preloadedQuestion);
+      console.log("Transitioning to next question:", preloadedQuestion);
       setCurrentQuestion(preloadedQuestion);
       setPreloadedQuestion(null);
       setShouldShowNext(false);
       setSelectedAnswer(null);
       setShowExplanation(false);
-      setCurrentQuestionTime(0); // Reset timer
-      startQuestionTimer(); // Start timer for new question
+      setCurrentQuestionTime(0);
+      startQuestionTimer();
       setSessionStats(prev => ({
         ...prev,
-        totalQuestions: prev.totalQuestions + 1
+        totalQuestions: prev.totalQuestions + 1,
       }));
     }
-  }, [shouldShowNext, preloadedQuestion]);
+  }, [shouldShowNext, preloadedQuestion, startQuestionTimer]);
 
-  // Add cleanup for timer
   useEffect(() => {
     return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
       }
     };
   }, []);
 
-  const formatAccuracy = (accuracy: number): number => {
-    return Math.round(accuracy);
-  };
+  const formatAccuracy = (accuracy: number): number => Math.round(accuracy);
 
   if (isInitialLoading) {
     return (
@@ -303,7 +291,7 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold text-center mb-4">
             What do you want to practice?
           </h1>
-          
+
           <div className="w-full max-w-xl mx-auto">
             <SearchBar
               onSearch={handleSearch}
@@ -311,31 +299,26 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
               centered={true}
               className="bg-gray-900/80"
             />
-            
             <p className="text-sm text-gray-400 text-center mt-1">
               Press Enter to search
             </p>
-            
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
               <span className="text-sm text-gray-400">Try:</span>
               <button
                 onClick={() => handleSearch("Quantum Physics")}
-                className="px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 
-                  border border-purple-500/30 transition-colors text-xs sm:text-sm text-purple-300"
+                className="px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 transition-colors text-xs sm:text-sm text-purple-300"
               >
                 ⚛️ Quantum Physics
               </button>
               <button
                 onClick={() => handleSearch("Machine Learning")}
-                className="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 
-                  border border-blue-500/30 transition-colors text-xs sm:text-sm text-blue-300"
+                className="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 transition-colors text-xs sm:text-sm text-blue-300"
               >
                 🤖 Machine Learning
               </button>
               <button
                 onClick={() => handleSearch("World History")}
-                className="px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 
-                  border border-green-500/30 transition-colors text-xs sm:text-sm text-green-300"
+                className="px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 transition-colors text-xs sm:text-sm text-green-300"
               >
                 🌍 World History
               </button>
@@ -354,7 +337,6 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                 {formatAccuracy(stats.accuracy)}%
               </div>
             </div>
-
             <div className="card">
               <div className="flex items-center justify-between">
                 <span className="stats-value text-xs sm:text-base text-primary">
@@ -364,7 +346,6 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
               </div>
               <span className="stats-label text-xs sm:text-sm">Questions</span>
             </div>
-
             <div className="card">
               <div className="flex items-center justify-between">
                 <span className="stats-value text-yellow-500">
@@ -374,7 +355,6 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
               </div>
               <span className="stats-label">Streak</span>
             </div>
-
             <div className="card">
               <div className="flex items-center justify-between">
                 <span className="stats-value text-purple-500">
@@ -385,11 +365,9 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
               <span className="stats-label">Time</span>
             </div>
           </div>
-
           <div className="card flex-1 flex flex-col mt-4">
             <div className="flex justify-between items-start">
-              <h2 className="text-xs sm:text-base font-medium leading-relaxed 
-                text-gray-200 max-w-3xl whitespace-pre-line tracking-wide">
+              <h2 className="text-xs sm:text-base font-medium leading-relaxed text-gray-200 max-w-3xl whitespace-pre-line tracking-wide">
                 {currentQuestion?.text}
               </h2>
               <button
@@ -403,23 +381,21 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                 )}
               </button>
             </div>
-
             <div className="space-y-2">
               {currentQuestion?.options?.map((option: string, idx: number) => (
                 <button
                   key={idx}
                   onClick={() => handleAnswer(idx)}
                   disabled={selectedAnswer !== null}
-                  className={`w-full text-left px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg 
-                    text-xs sm:text-sm leading-relaxed ${
-                      selectedAnswer === null
-                        ? "bg-card hover:bg-gray-800"
-                        : idx === currentQuestion.correctAnswer
-                        ? "bg-green-500/20 text-green-500"
-                        : selectedAnswer === idx
-                        ? "bg-red-500/20 text-red-500"
-                        : "bg-card"
-                    }`}
+                  className={`w-full text-left px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm leading-relaxed ${
+                    selectedAnswer === null
+                      ? "bg-card hover:bg-gray-800"
+                      : idx === currentQuestion.correctAnswer
+                      ? "bg-green-500/20 text-green-500"
+                      : selectedAnswer === idx
+                      ? "bg-red-500/20 text-red-500"
+                      : "bg-card"
+                  }`}
                 >
                   <span className="inline-block w-5 sm:w-6 font-medium">
                     {String.fromCharCode(65 + idx)}.
@@ -428,7 +404,6 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                 </button>
               ))}
             </div>
-
             {showExplanation && (
               <div className="mt-3 space-y-2 text-sm">
                 {!isPaused && nextQuestionCountdown !== null && (
@@ -446,19 +421,22 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                     </div>
                   </div>
                 )}
-
-                <div className={`px-3 py-2 rounded-lg ${
-                  selectedAnswer === currentQuestion.correctAnswer
-                    ? "bg-green-500/20 text-green-500"
-                    : "bg-red-500/20 text-red-500"
-                }`}>
+                <div
+                  className={`px-3 py-2 rounded-lg ${
+                    selectedAnswer === currentQuestion?.correctAnswer
+                      ? "bg-green-500/20 text-green-500"
+                      : "bg-red-500/20 text-red-500"
+                  }`}
+                >
                   <div className="flex items-start gap-2">
-                    <div className={`p-1 rounded-full ${
-                      selectedAnswer === currentQuestion.correctAnswer
-                        ? "bg-green-500/20"
-                        : "bg-red-500/20"
-                    }`}>
-                      {selectedAnswer === currentQuestion.correctAnswer ? (
+                    <div
+                      className={`p-1 rounded-full ${
+                        selectedAnswer === currentQuestion?.correctAnswer
+                          ? "bg-green-500/20"
+                          : "bg-red-500/20"
+                      }`}
+                    >
+                      {selectedAnswer === currentQuestion?.correctAnswer ? (
                         <CheckCircle className="w-4 h-4" />
                       ) : (
                         <XCircle className="w-4 h-4" />
@@ -466,22 +444,23 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                     </div>
                     <div>
                       <p className="font-medium">
-                        {selectedAnswer === currentQuestion.correctAnswer
+                        {selectedAnswer === currentQuestion?.correctAnswer
                           ? "Correct!"
-                          : `Incorrect. The right answer is ${String.fromCharCode(65 + currentQuestion.correctAnswer)}`}
+                          : `Incorrect. The right answer is ${String.fromCharCode(
+                              65 + currentQuestion!.correctAnswer
+                            )}`}
                       </p>
                       <p className="text-xs mt-1 opacity-90">
-                        {currentQuestion.explanation.correct}
+                        {currentQuestion?.explanation.correct}
                       </p>
                     </div>
                   </div>
                 </div>
-
                 <div className="px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
                   <div className="flex items-center gap-2">
                     <Lightbulb className="w-4 h-4 text-blue-400" />
                     <p className="text-xs text-blue-400">
-                      {currentQuestion.explanation.key_point}
+                      {currentQuestion?.explanation.key_point}
                     </p>
                   </div>
                 </div>
@@ -494,4 +473,4 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   );
 };
 
-// abc
+ExploreView.displayName = 'ExploreView';

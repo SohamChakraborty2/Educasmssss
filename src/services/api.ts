@@ -2,8 +2,10 @@
 import { Question, UserContext, ExploreResponse } from "../types";
 import { GPTService } from "./gptService";
 
+// Create a single instance of GPTService
 const gptService = new GPTService();
 
+// Helper function to transform raw question data
 const transformQuestion = (rawQuestion: Question): Question => ({
   text: rawQuestion.text,
   options: rawQuestion.options,
@@ -13,9 +15,10 @@ const transformQuestion = (rawQuestion: Question): Question => ({
   ageGroup: rawQuestion.ageGroup,
   topic: rawQuestion.topic,
   subtopic: rawQuestion.subtopic || "",
-  questionType: rawQuestion.questionType || "conceptual"
+  questionType: rawQuestion.questionType || "conceptual",
 });
 
+// Export a single API object that wraps GPTService calls
 export const api = {
   async getQuestion(topic: string, level: number, userContext: UserContext): Promise<Question> {
     try {
@@ -29,9 +32,9 @@ export const api = {
 
   async generateTest(topic: string, examType: 'JEE' | 'NEET'): Promise<Question[]> {
     try {
-      console.log('API generateTest called with:', { topic, examType });
+      console.log("API generateTest called with:", { topic, examType });
       const questions = await gptService.getTestQuestions(topic, examType);
-      console.log('API received questions:', questions);
+      console.log("API received questions:", questions);
       return questions.map(transformQuestion);
     } catch (error) {
       console.error("Test generation error:", error);

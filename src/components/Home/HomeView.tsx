@@ -2,15 +2,22 @@
 import { BookOpen, Target, ClipboardList } from "lucide-react";
 import { SearchBar } from "../shared/SearchBar";
 
+type ModeAction = "explore" | "playground" | "test";
+
+interface Mode {
+  icon: React.FC; 
+  title: string;
+  description: string;
+  action: ModeAction;
+  placeholder: string;
+}
+
 interface HomeViewProps {
-  onModeSelect: (
-    mode: "explore" | "playground" | "test",
-    query?: string
-  ) => void;
+  onModeSelect: (mode: ModeAction, query?: string) => void;
 }
 
 export const HomeView = ({ onModeSelect }: HomeViewProps) => {
-  const modes = [
+  const modes: Mode[] = [
     {
       icon: BookOpen,
       title: "Explore",
@@ -51,7 +58,7 @@ export const HomeView = ({ onModeSelect }: HomeViewProps) => {
                 <p className="text-gray-400 mb-4">{mode.description}</p>
                 <SearchBar
                   placeholder={mode.placeholder}
-                  onSearch={(query) => onModeSelect(mode.action as any, query)}
+                  onSearch={(query) => onModeSelect(mode.action, query)}
                 />
               </div>
             </div>

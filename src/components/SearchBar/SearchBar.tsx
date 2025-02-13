@@ -1,14 +1,24 @@
-import React, { useState, KeyboardEvent } from 'react';
+import React, { useState, useEffect, KeyboardEvent } from 'react';
 
 interface SearchBarProps {
-  value: string;
+  value?: string;
   onChange: (value: string) => void;
   onSearch: (query: string) => void;
   isLoading?: boolean;
 }
 
-export const SearchBar = ({ value, onChange, onSearch, isLoading }: SearchBarProps) => {
+export const SearchBar: React.FC<SearchBarProps> = ({
+  value = "",
+  onChange,
+  onSearch,
+  isLoading = false,
+}) => {
   const [localValue, setLocalValue] = useState(value);
+
+  // Update local state if the value prop changes
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
 
   const handleSubmit = () => {
     if (localValue.trim()) {
@@ -22,7 +32,7 @@ export const SearchBar = ({ value, onChange, onSearch, isLoading }: SearchBarPro
     onChange(newValue);
   };
 
-  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSubmit();
     }
@@ -34,7 +44,7 @@ export const SearchBar = ({ value, onChange, onSearch, isLoading }: SearchBarPro
         type="text"
         value={localValue}
         onChange={handleChange}
-        onKeyPress={handleKeyPress}
+        onKeyDown={handleKeyDown}
         placeholder="Enter your query..."
         className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-primary"
         disabled={isLoading}
@@ -42,13 +52,14 @@ export const SearchBar = ({ value, onChange, onSearch, isLoading }: SearchBarPro
       <button
         onClick={handleSubmit}
         disabled={isLoading || !localValue.trim()}
-        className={`absolute right-2 top-1/2 transform -translate-y-1/2 px-4 py-1 rounded-md 
-          ${isLoading || !localValue.trim() 
+        className={`absolute right-2 top-1/2 transform -translate-y-1/2 px-4 py-1 rounded-md ${
+          isLoading || !localValue.trim() 
             ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-            : 'bg-primary text-white hover:bg-primary/90'}`}
+            : 'bg-primary text-white hover:bg-primary/90'
+        }`}
       >
         {isLoading ? 'Searching...' : 'Search'}
       </button>
     </div>
   );
-}; 
+};
